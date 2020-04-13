@@ -31,7 +31,7 @@ loan_data <- read.csv('loan.csv')
 Lets extract all the borrower characteristic available before he applies for a loan. 
 
 ```{r}
-column_vector <- c('loan_amnt', 'term', 'int_rate', 'installment', 'emp_length', 'home_ownership', 'annual_inc', 'verification_status', 'purpose', 'addr_state', 'dti', 'open_acc', 'total_acc', 'grade', 'sub_grade', 'delinq_2yrs', 'inq_last_6mths', 'pub_rec', 'revol_bal', 'revol_util')
+column_vector <- c('loan_amnt', 'term', 'int_rate', 'emp_length', 'home_ownership', 'annual_inc', 'verification_status', 'purpose', 'addr_state', 'dti', 'open_acc', 'total_acc', 'grade', 'sub_grade', 'delinq_2yrs', 'inq_last_6mths', 'pub_rec', 'revol_bal', 'revol_util')
 loan_data_filtered <- loan_data %>% select(all_of(column_vector))
 ```
 
@@ -41,7 +41,109 @@ Lets drop rows missing any of the data.
 loan_data_filtered <- drop_na(loan_data_filtered)
 ```
 
-# Exploratory Data Analysis
+```{r}
+summary(loan_data_filtered)
+```
+
+# Data Transformation
+
+```{r}
+table(loan_data_filtered$emp_length)
+loan_data_filtered <- loan_data_filtered %>% filter(emp_length != 'n/a')
+```
+
+```{r}
+loan_data_filtered <- loan_data_filtered %>% mutate(years = ifelse(emp_length ==  "< 1 year", 0, ifelse(emp_length ==  "1 year", 1, ifelse(emp_length ==  "2 years", 2, ifelse(emp_length ==  "3 years", 3, ifelse(emp_length ==  "4 years", 4, ifelse(emp_length ==  "5 years", 5, ifelse(emp_length ==  "6 years", 6, ifelse(emp_length ==  "7 years", 7, ifelse(emp_length ==  "8 years", 8, ifelse(emp_length ==  "9 years", 9, 10)))))))))))
+loan_data_filtered <- loan_data_filtered %>% select(-emp_length)
+loan_data_filtered$years <- as.factor(loan_data_filtered$years)
+```
+
+```{r}
+table(loan_data_filtered$home_ownership)
+loan_data_filtered$home_ownership <- as.character(loan_data_filtered$home_ownership)
+loan_data_filtered <- loan_data_filtered %>% filter(home_ownership %in% c('MORTGAGE', 'OWN', 'RENT'))
+loan_data_filtered$home_ownership <- as.factor(loan_data_filtered$home_ownership)
+```
+
+```{r}
+boxplot(loan_data_filtered$annual_inc)
+hist(loan_data_filtered$annual_inc, breaks = 100)
+```
+
+```{r}
+outliers <- boxplot(loan_data_filtered$annual_inc, plot = FALSE)$out
+loan_data_filtered <- loan_data_filtered[-which(loan_data_filtered$annual_inc %in% outliers),]
+```
+
+```{r}
+class(loan_data_filtered$purpose)
+loan_data_filtered$purpose <- as.character(loan_data_filtered$purpose)
+```
+
+```{r}
+table(loan_data_filtered$purpose)
+loan_data_filtered <- loan_data_filtered %>% mutate(purpose = ifelse(purpose %in% c('educational', 'house', 'vacation', 'wedding', 'renewable_energy', 'moving'), 'other', purpose))
+loan_data_filtered$purpose <- as.factor(loan_data_filtered$purpose)
+```
+
+```{r}
+boxplot(loan_data_filtered$dti)
+hist(loan_data_filtered$dti, breaks = 100)
+```
+
+```{r}
+outliers <- boxplot(loan_data_filtered$dti, plot = FALSE)$out
+loan_data_filtered <- loan_data_filtered[-which(loan_data_filtered$dti %in% outliers),]
+loan_data_filtered <- loan_data_filtered %>% filter(dti >= 0)
+```
+
+```{r}
+boxplot(loan_data_filtered$open_acc)
+hist(loan_data_filtered$open_acc, breaks = 100)
+```
+
+```{r}
+outliers <- boxplot(loan_data_filtered$open_acc, plot = FALSE)$out
+#loan_data_filtered <- loan_data_filtered[-which(loan_data_filtered$open_acc %in% outliers),]
+```
+
+```{r}
+boxplot(loan_data_filtered$total_acc)
+hist(loan_data_filtered$total_acc, breaks = 100)
+```
+
+```{r}
+outliers <- boxplot(loan_data_filtered$total_acc, plot = FALSE)$out
+#loan_data_filtered <- loan_data_filtered[-which(loan_data_filtered$total_acc %in% outliers),]
+```
+
+```{r}
+boxplot(loan_data_filtered$revol_bal)
+hist(loan_data_filtered$revol_bal, breaks = 100)
+```
+
+```{r}
+outliers <- boxplot(loan_data_filtered$revol_bal, plot = FALSE)$out
+#loan_data_filtered <- loan_data_filtered[-which(loan_data_filtered$revol_bal %in% outliers),]
+```
+
+```{r}
+boxplot(loan_data_filtered$revol_util)
+hist(loan_data_filtered$revol_util, breaks = 100)
+```
+
+```{r}
+outliers <- boxplot(loan_data_filtered$revol_util, plot = FALSE)$out
+loan_data_filtered <- loan_data_filtered[-which(loan_data_filtered$revol_util %in% outliers),]
+```
+
+```{r}
+loan_data_filtered$pub_rec <- as.factor(loan_data_filtered$pub_rec)
+loan_data_filtered$inq_last_6mths <- as.factor(loan_data_filtered$inq_last_6mths)
+loan_data_filtered$delinq_2yrs <- as.factor(loan_data_filtered$delinq_2yrs)
+```
+
+# Check for problems
 
 ```{r}
 my_plots <- lapply(names(loan_data_filtered), function(var_x){
@@ -56,57 +158,20 @@ my_plots <- lapply(names(loan_data_filtered), function(var_x){
 plot_grid(plotlist = my_plots)
 ```
 
-Clearly there are few variables that are skewed either towards right or left in case of numeric values like annual_inc. We will have to normalize the data.
-
 ```{r}
-summary(loan_data_filtered)
+lm.fit <- lm(int_rate ~ ., data = loan_data_filtered)
 ```
 
 ```{r}
-
+table(loan_data_filtered$purpose)
 ```
 
 ```{r}
-normalize <- function(x) {
+minMaxNormalize <- function(x) {
 return ((x - min(x)) / (max(x) - min(x)))
 }
 
-loan_data_filtered$annual_inc_norm<-normalize(loan_data_filtered$annual_inc)
-loan_data_filtered$dti_norm<-normalize(loan_data_filtered$dti)
-```
-
-```{r}
-loan_data_filtered_without_normalized <- loan_data_filtered %>% select(-c('annual_inc_norm', 'dti_norm'))
-loan_data_filtered_without_grades <- loan_data_filtered %>% select(-c('grade', 'sub_grade', 'annual_inc_norm', 'dti_norm'))
-loan_data_filtered_without_grades_and_normalized <- loan_data_filtered %>% select(-c('grade', 'sub_grade', 'annual_inc', 'dti'))
-```
-
-```{r}
-set.seed(7)
-train_indices <- sample(seq_len(nrow(loan_data_filtered_without_normalized)), size = 0.75*nrow(loan_data_filtered_without_normalized))
-train_data <- loan_data_filtered_without_normalized[train_indices,]
-test_data <- loan_data_filtered_without_normalized[-train_indices,]
-linear <- lm(int_rate ~ . , data = train_data)
-summary(linear)
-#rmse(test_data$int_rate, predict(linear, test_data))
-```
-
-```{r}
-set.seed(7)
-train_indices <- sample(seq_len(nrow(loan_data_filtered_without_grades)), size = 0.75*nrow(loan_data_filtered_without_grades))
-train_data <- loan_data_filtered_without_grades[train_indices,]
-test_data <- loan_data_filtered_without_grades[-train_indices,]
-linear <- lm(int_rate ~ . , data = train_data)
-summary(linear)
-#rmse(test_data$int_rate, predict(linear, test_data))
-```
-
-```{r}
-set.seed(7)
-train_indices <- sample(seq_len(nrow(loan_data_filtered_without_grades_and_normalized)), size = 0.75*nrow(loan_data_filtered_without_grades_and_normalized))
-train_data <- loan_data_filtered_without_grades_and_normalized[train_indices,]
-test_data <- loan_data_filtered_without_grades_and_normalized[-train_indices,]
-linear <- lm(int_rate ~ . , data = train_data)
-#summary(linear)
-rmse(test_data$int_rate, predict(linear, test_data))
+standardScalarNormalize <- function(x) {
+return ((x - mean(x)) / sd(x))
+}
 ```
