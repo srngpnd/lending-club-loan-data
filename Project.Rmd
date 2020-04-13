@@ -1,0 +1,112 @@
+---
+title: "Project"
+author: "Sarang Pande"
+date: "4/12/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Libraries
+
+```{r}
+library(dplyr)
+library(leaps)
+library(tidyverse)
+library(cowplot)
+library(GGally)
+library(Metrics)
+```
+
+# Data Gathering
+
+```{r}
+loan_data <- read.csv('loan.csv')
+```
+
+# Data Preprocessing
+
+Lets extract all the borrower characteristic available before he applies for a loan. 
+
+```{r}
+column_vector <- c('loan_amnt', 'term', 'int_rate', 'installment', 'emp_length', 'home_ownership', 'annual_inc', 'verification_status', 'purpose', 'addr_state', 'dti', 'open_acc', 'total_acc', 'grade', 'sub_grade', 'delinq_2yrs', 'inq_last_6mths', 'pub_rec', 'revol_bal', 'revol_util')
+loan_data_filtered <- loan_data %>% select(all_of(column_vector))
+```
+
+Lets drop rows missing any of the data.
+
+```{r}
+loan_data_filtered <- drop_na(loan_data_filtered)
+```
+
+# Exploratory Data Analysis
+
+```{r}
+my_plots <- lapply(names(loan_data_filtered), function(var_x){
+  p <-ggplot(loan_data_filtered) + aes_string(var_x)
+  if(is.numeric(loan_data_filtered[[var_x]])) {
+    p <- p + geom_histogram(bins = 10)
+  } else {
+    p <- p + geom_bar()
+  } 
+})
+
+plot_grid(plotlist = my_plots)
+```
+
+Clearly there are few variables that are skewed either towards right or left in case of numeric values like annual_inc. We will have to normalize the data.
+
+```{r}
+summary(loan_data_filtered)
+```
+
+```{r}
+
+```
+
+```{r}
+normalize <- function(x) {
+return ((x - min(x)) / (max(x) - min(x)))
+}
+
+loan_data_filtered$annual_inc_norm<-normalize(loan_data_filtered$annual_inc)
+loan_data_filtered$dti_norm<-normalize(loan_data_filtered$dti)
+```
+
+```{r}
+loan_data_filtered_without_normalized <- loan_data_filtered %>% select(-c('annual_inc_norm', 'dti_norm'))
+loan_data_filtered_without_grades <- loan_data_filtered %>% select(-c('grade', 'sub_grade', 'annual_inc_norm', 'dti_norm'))
+loan_data_filtered_without_grades_and_normalized <- loan_data_filtered %>% select(-c('grade', 'sub_grade', 'annual_inc', 'dti'))
+```
+
+```{r}
+set.seed(7)
+train_indices <- sample(seq_len(nrow(loan_data_filtered_without_normalized)), size = 0.75*nrow(loan_data_filtered_without_normalized))
+train_data <- loan_data_filtered_without_normalized[train_indices,]
+test_data <- loan_data_filtered_without_normalized[-train_indices,]
+linear <- lm(int_rate ~ . , data = train_data)
+summary(linear)
+#rmse(test_data$int_rate, predict(linear, test_data))
+```
+
+```{r}
+set.seed(7)
+train_indices <- sample(seq_len(nrow(loan_data_filtered_without_grades)), size = 0.75*nrow(loan_data_filtered_without_grades))
+train_data <- loan_data_filtered_without_grades[train_indices,]
+test_data <- loan_data_filtered_without_grades[-train_indices,]
+linear <- lm(int_rate ~ . , data = train_data)
+summary(linear)
+#rmse(test_data$int_rate, predict(linear, test_data))
+```
+
+```{r}
+set.seed(7)
+train_indices <- sample(seq_len(nrow(loan_data_filtered_without_grades_and_normalized)), size = 0.75*nrow(loan_data_filtered_without_grades_and_normalized))
+train_data <- loan_data_filtered_without_grades_and_normalized[train_indices,]
+test_data <- loan_data_filtered_without_grades_and_normalized[-train_indices,]
+linear <- lm(int_rate ~ . , data = train_data)
+#summary(linear)
+rmse(test_data$int_rate, predict(linear, test_data))
+```
