@@ -18,6 +18,10 @@ library(tidyverse)
 library(cowplot)
 library(GGally)
 library(Metrics)
+library(glmnet)
+library(pls)
+library(caret)
+library(nnet)
 ```
 
 # Data Gathering
@@ -138,40 +142,161 @@ loan_data_filtered <- loan_data_filtered[-which(loan_data_filtered$revol_util %i
 ```
 
 ```{r}
-loan_data_filtered$pub_rec <- as.factor(loan_data_filtered$pub_rec)
-loan_data_filtered$inq_last_6mths <- as.factor(loan_data_filtered$inq_last_6mths)
-loan_data_filtered$delinq_2yrs <- as.factor(loan_data_filtered$delinq_2yrs)
+#loan_data_filtered$pub_rec <- as.factor(loan_data_filtered$pub_rec)
+#loan_data_filtered$inq_last_6mths <- as.factor(loan_data_filtered$inq_last_6mths)
+#loan_data_filtered$delinq_2yrs <- as.factor(loan_data_filtered$delinq_2yrs)
+loan_data_filtered <- loan_data_filtered %>% select(-addr_state)
 ```
 
-# Check for problems
+# Modelling
+
+## Forward Selection
 
 ```{r}
-my_plots <- lapply(names(loan_data_filtered), function(var_x){
-  p <-ggplot(loan_data_filtered) + aes_string(var_x)
-  if(is.numeric(loan_data_filtered[[var_x]])) {
-    p <- p + geom_histogram(bins = 10)
-  } else {
-    p <- p + geom_bar()
-  } 
-})
-
-plot_grid(plotlist = my_plots)
+regfit.fwd = regsubsets(int_rate ~ ., data = loan_data_filtered, really.big = TRUE, method ="forward", nvmax = 30)
 ```
 
 ```{r}
-lm.fit <- lm(int_rate ~ ., data = loan_data_filtered)
+regfit.fwd.summary <- summary(regfit.fwd)
+par(mfrow=c(2, 2))
+plot(regfit.fwd.summary$rss ,xlab="Number of Variables ",ylab="RSS",type="l") 
+plot(regfit.fwd.summary$adjr2 ,xlab="Number of Variables ", ylab="Adjusted RSq",type="l")
+plot(regfit.fwd.summary$cp ,xlab="Number of Variables ",ylab="Cp", type='l')
+plot(regfit.fwd.summary$bic ,xlab="Number of Variables ",ylab="BIC",type='l')
 ```
 
 ```{r}
-table(loan_data_filtered$purpose)
+coef(regfit.fwd, 6)
 ```
 
 ```{r}
-minMaxNormalize <- function(x) {
-return ((x - min(x)) / (max(x) - min(x)))
+plot(regfit.fwd,scale="r2")
+plot(regfit.fwd,scale="adjr2")
+plot(regfit.fwd,scale="Cp")
+plot(regfit.fwd,scale="bic")
+```
+
+```{r}
+temp <- loan_data_filtered %>% select(-c('grade','sub_grade'))
+regfit.fwd.v2 = regsubsets(int_rate ~ ., data = temp, really.big = TRUE, method ="forward", nvmax = 40)
+```
+
+```{r}
+regfit.fwd.v2.summary <- summary(regfit.fwd.v2)
+par(mfrow=c(2, 2))
+plot(regfit.fwd.v2.summary$rss ,xlab="Number of Variables ",ylab="RSS",type="l") 
+plot(regfit.fwd.v2.summary$adjr2 ,xlab="Number of Variables ", ylab="Adjusted RSq",type="l")
+plot(regfit.fwd.v2.summary$cp ,xlab="Number of Variables ",ylab="Cp", type='l')
+plot(regfit.fwd.v2.summary$bic ,xlab="Number of Variables ",ylab="BIC",type='l')
+```
+
+```{r}
+coef(regfit.fwd.v2, 16)
+```
+
+```{r}
+plot(regfit.fwd.v2,scale="r2")
+plot(regfit.fwd.v2,scale="adjr2")
+plot(regfit.fwd.v2,scale="Cp")
+plot(regfit.fwd.v2,scale="bic")
+```
+
+## Lasso Regression
+
+```{r}
+y <- loan_data_filtered$int_rate
+x <- loan_data_filtered %>% select(-int_rate) %>% data.matrix()
+lambdas <- 10^seq(3, -2, by = -.1)
+cv_fit <- cv.glmnet(x, y, alpha = 0, lambda = lambdas)
+plot(cv_fit)
+```
+
+```{r}
+opt_lambda <- cv_fit$lambda.min
+fit <- cv_fit$glmnet.fit
+y_predicted <- predict(fit, s = opt_lambda, newx = x)
+
+# Sum of Squares Total and Error
+sst <- sum((y - mean(y))^2)
+sse <- sum((y_predicted - y)^2)
+```
+
+## Principal Component Regression
+
+```{r}
+set.seed(2)
+pcr.fit=pcr(int_rate ~ ., data=loan_data_filtered , scale=TRUE , validation ="CV")
+```
+
+```{r}
+summary(pcr.fit)
+validationplot(pcr.fit, val.type="MSEP")
+```
+
+```{r}
+set.seed(2)
+pcr.temp.fit=pcr(int_rate ~ ., data=temp , scale=TRUE , validation ="CV")
+```
+
+```{r}
+summary(pcr.temp.fit)
+validationplot(pcr.temp.fit, val.type="MSEP")
+```
+
+## Partial Least Squares
+
+```{r}
+```
+
+## Logistic Regression
+
+```{r}
+new_temp <- loan_data_filtered %>% select(-sub_grade)
+table(new_temp$grade)
+```
+
+```{r}
+x <- new_temp %>% select(-grade)
+
+```
+
+```{r}
+normalize <- function(x)
+{
+    return((x- min(x)) /(max(x)-min(x)))
 }
 
-standardScalarNormalize <- function(x) {
-return ((x - mean(x)) / sd(x))
-}
+x$loan_amnt <- sapply(list(x$loan_amnt), normalize)
+x$annual_inc <- sapply(list(x$annual_inc), normalize)
+x$revol_bal <- sapply(list(x$revol_bal), normalize)
+
+```
+
+```{r}
+set.seed(234)
+data <- downSample(x = x, y = new_temp$grade)
+```
+
+```{r}
+table(data$Class)
+```
+
+```{r}
+set.seed(7)
+train_indices <- sample(seq_len(nrow(data)), size = 0.75*nrow(data))
+train_data <- data[train_indices,]
+test_data <- data[-train_indices,]
+```
+
+```{r}
+glm.fits = multinom(Class ~ ., data=train_data)
+summary(glm.fits)
+```
+
+```{r}
+predicted_class <- predict(glm.fits, test_data)
+```
+
+```{r}
+table(predicted_class, test_data$Class)
 ```
