@@ -148,6 +148,18 @@ loan_data_filtered <- loan_data_filtered[-which(loan_data_filtered$revol_util %i
 loan_data_filtered <- loan_data_filtered %>% select(-addr_state)
 ```
 
+```{r}
+normalize <- function(x)
+{
+    return((x- min(x)) /(max(x)-min(x)))
+}
+
+loan_data_filtered$loan_amnt <- sapply(list(loan_data_filtered$loan_amnt), normalize)
+loan_data_filtered$annual_inc <- sapply(list(loan_data_filtered$annual_inc), normalize)
+loan_data_filtered$revol_bal <- sapply(list(loan_data_filtered$revol_bal), normalize)
+```
+
+
 # Modelling
 
 ## Forward Selection
@@ -255,24 +267,28 @@ new_temp <- loan_data_filtered %>% select(-sub_grade)
 table(new_temp$grade)
 ```
 
+
+## Upsampling
+
+```{r}
+new_temp$grade <- as.character(new_temp$grade)
+new_temp_1 <- new_temp %>% filter(grade != 'G')
+new_temp_1$grade <- as.factor(new_temp_1$grade)
+x_1 <- new_temp_1 %>% select(-grade)
+data_1 <- downSample(x = x_1, y = new_temp_1$grade)
+
+new_temp_2 <- new_temp %>% filter(grade %in% c('F', 'G'))
+new_temp_2$grade <- as.factor(new_temp_2$grade)
+x_2 <- new_temp_2 %>% select(-grade)
+data_2 <- upSample(x = x_2, y = new_temp_2$grade)
+data_2 <- data_2 %>% filter(Class == 'G')
+
+data <- rbind(data_1, data_2)
+```
+
+## Downsampling
 ```{r}
 x <- new_temp %>% select(-grade)
-
-```
-
-```{r}
-normalize <- function(x)
-{
-    return((x- min(x)) /(max(x)-min(x)))
-}
-
-x$loan_amnt <- sapply(list(x$loan_amnt), normalize)
-x$annual_inc <- sapply(list(x$annual_inc), normalize)
-x$revol_bal <- sapply(list(x$revol_bal), normalize)
-
-```
-
-```{r}
 set.seed(234)
 data <- downSample(x = x, y = new_temp$grade)
 ```
@@ -299,4 +315,11 @@ predicted_class <- predict(glm.fits, test_data)
 
 ```{r}
 table(predicted_class, test_data$Class)
+```
+
+
+## Random Forest
+
+```{r}
+
 ```
